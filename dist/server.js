@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const https = require('https');
 const wordDict = require('./word-dictionary');
+const { queryInfo } = require('./product-info');
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 app.use(express_1.default.json());
@@ -24,6 +25,9 @@ app.post('/webhook', (req, res) => {
                 break;
             case 'Query Recommendation':
                 queryRecommendation(req.body, res);
+                break;
+            case 'Query Product':
+                queryProduct(req.body, res);
                 break;
             default:
                 res.json({
@@ -81,7 +85,7 @@ function queryMenu(body, res) {
     });
 }
 function queryRecommendation(body, res) {
-    const recommendationText = "We have the best burger in Irvine. Would you like to try it? Or you can check our menu here:";
+    const recommendationText = "We have the best burger in Nairobi. Would you like to try it? Or you can check our menu here:";
     res.json({
         fulfillmentMessages: [
             {
@@ -93,7 +97,7 @@ function queryRecommendation(body, res) {
                 card: {
                     title: 'MCS Burger – Menu',
                     imageUri: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing',
-                    subtitle: '4:00 – 7:00 pm\nPacific Ballroom, UC Irvine Student Center',
+                    subtitle: '4:00 – 7:00 pm\nPacific Ballroom, UON Student Center',
                     buttons: [
                         {
                             text: 'Check it out',
@@ -103,5 +107,21 @@ function queryRecommendation(body, res) {
                 }
             }
         ]
+    });
+}
+function queryProduct(body, res) {
+    const parameters = body.queryResult.parameters;
+    const item = parameters.allItem;
+    const productAttr = parameters.productAttribute;
+    const customerNeed = parameters.customerNeed;
+    let response;
+    if (customerNeed) {
+        response = queryInfo(customerNeed);
+    }
+    else {
+        response = queryInfo(productAttr, item);
+    }
+    res.json({
+        fulfillmentText: response
     });
 }
