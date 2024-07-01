@@ -4,30 +4,46 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const https = require('https');
+const wordDict = require('./word-dictionary');
 const app = (0, express_1.default)();
-const port = 3000;
-app.use(express_1.default.json()); // Add this line to parse JSON bodies
-app.get("/", (req, res) => {
-    res.send("hello world!");
-});
-app.post("/webhook", (req, res) => {
-    console.log(req.body);
-    const agent = req.body.queryResult;
-    const action = agent ? agent.action : null;
-    if (action === 'input.welcome') { // Match the action name from Dialogflow
-        res.json({
-            fulfillmentText: getWelcomeStr()
-        });
+const PORT = process.env.PORT || 3000;
+app.use(express_1.default.json());
+app.post('/webhook', (req, res) => {
+    console.log('Received POST request at /webhook');
+    console.log('Request body:', req.body); // Log the entire request body
+    // Handle Dialogflow intent fulfillment
+    if (req.body.queryResult) {
+        const intent = req.body.queryResult.intent.displayName;
+        switch (intent) {
+            case 'Default Welcome Intent':
+                welcome(req.body, res);
+                break;
+            case 'Query Menu':
+                queryMenu(req.body, res);
+                break;
+            case 'Query Recommendation':
+                queryRecommendation(req.body, res);
+                break;
+            default:
+                res.json({
+                    fulfillmentText: 'Default response from webhook.'
+                });
+        }
     }
     else {
-        res.json({
-            fulfillmentText: 'Default response from webhook'
-        });
+        res.status(400).send('Invalid Request!');
     }
 });
-app.listen(port, () => {
-    console.log(`server is running at port : ${port}`);
+app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
 });
+function welcome(body, res) {
+    const response = getWelcomeStr();
+    res.json({
+        fulfillmentText: response
+    });
+}
 function getWelcomeStr() {
     let greet = ["Hi! ", "Hello! "];
     let myName = ["I'm Robo-waiter. ", "My name is Robo-waiter. "];
@@ -39,5 +55,53 @@ function getWelcomeStr() {
     return response;
 }
 function getRandomInt(max) {
-    return Math.floor(Math.random() * max);
+    return Math.floor(Math.random() * Math.floor(max));
+}
+function queryMenu(body, res) {
+    const card = {
+        card: {
+            title: 'MCS Burger – Menu',
+            imageUri: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing',
+            subtitle: '4:00 – 7:00 pm\nPacific Ballroom, UON Student Center',
+            buttons: [
+                {
+                    text: 'Check it out',
+                    postback: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing'
+                }
+            ]
+        }
+    };
+    // Construct JSON response for Dialogflow fulfillment
+    res.json({
+        fulfillmentMessages: [
+            {
+                card: card.card
+            }
+        ]
+    });
+}
+function queryRecommendation(body, res) {
+    const recommendationText = "We have the best burger in Irvine. Would you like to try it? Or you can check our menu here:";
+    res.json({
+        fulfillmentMessages: [
+            {
+                text: {
+                    text: [recommendationText]
+                }
+            },
+            {
+                card: {
+                    title: 'MCS Burger – Menu',
+                    imageUri: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing',
+                    subtitle: '4:00 – 7:00 pm\nPacific Ballroom, UC Irvine Student Center',
+                    buttons: [
+                        {
+                            text: 'Check it out',
+                            postback: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing'
+                        }
+                    ]
+                }
+            }
+        ]
+    });
 }
