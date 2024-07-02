@@ -3,6 +3,14 @@ import express, { Request, Response } from 'express';
 const https = require('https');
 const wordDict = require('./word-dictionary');
 const { queryInfo } = require('./product-info');
+const { wordMap } = require('./word-dictionary'); // Import word dictionary
+const { parseItem } = require('./parse-item');
+const { printItems } = require('./print-items');
+const { getCategoryOption, isOptionsConflict, insertOptionsToItem } = require('./insert-options');
+const { orderPrice } = require('./order-price');
+const { wordsToNumbers } = require('words-to-numbers');
+const itemLimit = 50;
+const orderLimit = 10;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +29,9 @@ app.post('/webhook', (req: Request, res: Response) => {
             case 'Default Welcome Intent':
                 welcome(req.body, res);
                 break;
+            case 'Place Order':
+                placeOrder(req.body, res);
+                break;
             case 'Query Menu':
                 queryMenu(req.body, res);
                 break;
@@ -29,6 +40,9 @@ app.post('/webhook', (req: Request, res: Response) => {
                 break;
             case 'Query Product':
                 queryProduct(req.body, res);
+                break;
+            case 'Query Word':
+                queryWord(req.body, res);
                 break;
             default:
                 res.json({
@@ -135,3 +149,293 @@ function queryProduct(body: any, res: Response) {
         fulfillmentText: response
     });
 }
+
+function queryWord(body: any, res: Response) {
+    const parameters = body.queryResult.parameters;
+    let response;
+    if (parameters.vocabulary) {
+        response = wordMap.get(parameters.vocabulary);
+    }
+    if (parameters.any) {
+        response = wordMap.get(parameters.any);
+    }
+
+    if (response) {
+        res.json({
+            fulfillmentText: response
+        });
+    } else {
+        res.json({
+            fulfillmentText: `Sorry, I never heard ${parameters.any} before. Anything else I can help?`
+        });
+    }
+}
+
+function placeOrder(body: any, res: Response) {
+    let items = body.queryResult.parameters.allProduct; // Assuming this is how you access parameters in your parsed body
+    let itemObjects = []; // itemObjects are an array of item objects
+    let SF = initSlotFilling();
+    
+    let replaceItemParams = getContextParams(body, 'replaceitem');
+    let isReplacingItem = replaceItemParams ? replaceItemParams.replaceitem : false;
+    
+    for (let item of items) {
+        let obj = parseItem(item); // return a js object
+        if (obj.category == "drink" && obj.options.length == 0) obj.options.push("medium"); // medium by default
+        console.log(obj);
+        if (!detectSlots(SF, obj)) itemObjects.push(obj);
+    }
+    
+    let allItems = getOldItems(body);
+    let clarifyItems = false;
+    let itemsToClarify = [];
+    let length = allItems.length;
+    
+    if (length > 0) {
+        for (let itemObject of itemObjects) {
+            // if the same name but different options => clarify
+            if (itemObject.name != "combo"
+                && itemObject.name == allItems[length - 1].name
+                && !arraysEqual(itemObject.options, allItems[length - 1].options)) {
+                clarifyItems = true;
+                itemsToClarify.push(itemObject);
+            } else {
+                if (isReplacingItem) {
+                    itemObject.amount = allItems[length - 1].amount;
+                    allItems[length - 1] = itemObject;
+                    deleteContext(body, 'replaceitem');
+                } else {
+                    allItems.push(itemObject);
+                }
+            }
+        }
+    } else {
+        allItems.push.apply(allItems, itemObjects);
+    }
+    
+    setContext(body, 'order', 5, { order: allItems }); // Resetting the order context with new items
+    setDeliveryMethod(body, body.queryResult.parameters.deliveryMethod);
+
+    if (clarifyItems) {
+        let clarifyParams = { clarifyitems: itemsToClarify };
+        setContext(body, 'clarifyitems', 5, clarifyParams);
+        res.json({
+            fulfillmentText: `Would you like to modify your ${itemsToClarify[0].name} or add ${itemsToClarify[0].amount} more ${itemsToClarify[0].name}${itemsToClarify[0].name != "fries" && itemsToClarify[0].amount > 1 ? "s" : ""}?`
+        });
+        return;
+    }
+
+    if (clarifyItems || fillSlots(body, SF, res)) return;
+
+    if (checkEmptyOrder(body, allItems)) return; // Ensure only two arguments are passed
+    confirmAllItems(body, allItems, res);
+}
+
+
+
+
+
+
+//utility
+interface SlotFilling {
+    clarifyBurger: boolean;
+    clarifyShake: boolean;
+    burgerToClarify: any[]; // Replace 'any' with the appropriate type for burgerToClarify
+    shakeToClarify: any[]; // Replace 'any' with the appropriate type for shakeToClarify
+}
+
+function initSlotFilling(): SlotFilling {
+    let SF: SlotFilling = {
+        clarifyBurger: false,
+        clarifyShake: false,
+        burgerToClarify: [],
+        shakeToClarify: []
+    };
+    return SF;
+}
+
+function getContextParams(body: any, name: string) {
+    let contextName = `projects/${body.session}/contexts/${name}`;
+    let context = body.outputContexts ? body.outputContexts.find((ctx: any) => ctx.name === contextName) : null;
+    return context ? context.parameters : undefined;
+}
+
+function detectSlots(SF: any, obj: any) {
+    if (obj.name == "burger" || (obj.name == "combo" && obj.options.length == 0)) {
+        SF.clarifyBurger = true;
+        SF.burgerToClarify.push(obj);
+    } else if (obj.name == "shake" && obj.options.length == 0) {
+        SF.clarifyShake = true;
+        SF.shakeToClarify.push(obj);
+    } else if (obj.name == "water") {
+        // Assuming `body` is a parameter, but it's not defined in the code provided
+        // body.add("If you need water, just ask our friendly staff for a plastic cup. It's FREE. Thanks!");
+        console.log("If you need water, just ask our friendly staff for a plastic cup. It's FREE. Thanks!");
+    } else {
+        return false;
+    }
+    return true;
+}
+
+function getOldItems(body: any) {
+    let contextName = `projects/${body.session}/contexts/order`;
+    let context = body.outputContexts ? body.outputContexts.find((ctx: any) => ctx.name === contextName) : null;
+    if (!context || !context.parameters || !context.parameters.order || context.parameters.order.length === 0) {
+        return [];
+    }
+    return context.parameters.order;
+}
+
+function arraysEqual(a1: any[], a2: any[]) {
+    if (a1.length !== a2.length) return false;
+
+    let set = new Set(a1);
+    for (let e of a2) {
+        if (!set.has(e)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function deleteContext(body: any, name: string) {
+    body.setContext({ 'name': name, 'lifespan': '0' });
+}
+
+function resetOrderContext(body: any, allItems: any[]) {
+    let newItems = mergeOrder(allItems); // Assuming `mergeOrder` is defined elsewhere
+    let parameters = { order: newItems };
+    setContext(body, 'order', 999, parameters); // Assuming `setContext` is defined elsewhere
+    return newItems;
+}
+
+function setDeliveryMethod(body: any, deliveryMethod: string) {
+    if (deliveryMethod !== "") {
+        let deliveryParams = { delivery: deliveryMethod };
+        setContext(body, 'delivery', 999, deliveryParams); // Assuming `setContext` is defined elsewhere
+    }
+}
+
+function setContext(body: any, name: string, lifespan: number, parameters: any) {
+    if (!body.outputContexts) {
+        body.outputContexts = [];
+    }
+
+    let contextName = `projects/${body.session}/contexts/${name}`;
+    let existingContext = body.outputContexts.find((ctx: any) => ctx.name === contextName);
+
+    if (existingContext) {
+        existingContext.lifespanCount = lifespan;
+        existingContext.parameters = parameters;
+    } else {
+        body.outputContexts.push({
+            name: contextName,
+            lifespanCount: lifespan,
+            parameters: parameters
+        });
+    }
+}
+
+function fillSlots(body: any, SF: any, res: Response) {
+    if (SF.clarifyBurger) {
+        let burgerParams = { clarifyburger: SF.burgerToClarify };
+        setContext(body, 'clarifyburger', 5, burgerParams);
+        res.json({
+            fulfillmentText: "Which burger would you like? Hamburger, cheeseburger, or MCS?"
+        });
+        return true;
+    }
+    if (SF.clarifyShake) {
+        let shakeParams = { clarifyshake: SF.shakeToClarify };
+        setContext(body, 'clarifyshake', 5, shakeParams);
+        res.json({
+            fulfillmentText: "What kind of flavor do you want for your shake? We have chocolate, strawberry, and vanilla. All of them are delicious!"
+        });
+        return true;
+    }
+    return false;
+}
+
+function checkEmptyOrder(body: any, items: any[]): boolean {
+    if (items.length === 0) {
+        body.response.json({
+            fulfillmentText: "Your order is empty. Please add items to your order."
+        });
+        return true;
+    }
+    return false;
+}
+
+function confirmAllItems(body: any, allItems: any[], res: Response) {
+    let response = '' + getConfirmStr(); // Assuming `getConfirmStr` is defined elsewhere
+    response += printItems(allItems); // Assuming `printItems` is defined elsewhere
+    response += '. ' + getFollowUpStr(allItems); // Assuming `getFollowUpStr` is defined elsewhere
+    
+    res.json({
+        fulfillmentText: response
+    });
+}
+
+
+function getConfirmStr() {
+    let confirm = ['Sure. ', 'No problem. ', 'Gotcha. ', 'Okay. ', 'Of course. ', 'Awesome. '];
+    return confirm[getRandomInt(confirm.length)];
+}
+
+function getFollowUpStr(allItems: any[]) {
+    let orderDrink = false;
+    // Check if the customer has ordered a drink
+    for (let item of allItems) {
+        if (item.category !== "burger" && item.category !== "fries") {
+            console.log(item);
+            orderDrink = true;
+            break;
+        }
+    }
+    console.log(orderDrink);
+    if (!orderDrink) return 'Anything to drink?';
+    return getDefaultFollowUpStr();
+}
+
+// Utility function: getDefaultFollowUpStr
+function getDefaultFollowUpStr() {
+    let followUp = ['What else?', 'Anything else?'];
+    return followUp[getRandomInt(followUp.length)];
+}
+
+function mergeOrder(order: { name: string, options: string[], amount: number }[]): { name: string, options: string[], amount: number }[] {
+    let result: { name: string, options: string[], amount: number }[] = [];
+
+    for (let orderItem of order) {
+        let hasPushed = false;
+        for (let i = 0; i < result.length; i++) {
+            let resultItem = result[i];
+            if (orderItem.name !== resultItem.name) continue;
+            if (arraysEqual(orderItem.options, resultItem.options)) {
+                // Same item found, increase amount
+                result[i].amount += orderItem.amount;
+                hasPushed = true;
+            }
+        }
+        if (!hasPushed) {
+            result.push(orderItem);
+        }
+    }
+
+    // Limit order size, keeping only the latest items
+    const orderLimit = 10; // Example order limit, adjust as needed
+    if (result.length > orderLimit) result.splice(0, result.length - orderLimit);
+
+    // Detect fraudulent deals
+    const itemLimit = 5; // Example item limit, adjust as needed
+    for (let i = 0; i < result.length; i++) {
+        if (result[i].amount > itemLimit) {
+            result[i].amount = itemLimit;
+            // body.add("Thank you, but we only accept order amount of " + itemLimit + " at most."); // Need to confirm with Kyle
+        }
+    }
+
+    return result;
+}
+
+
