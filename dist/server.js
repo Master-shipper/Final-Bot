@@ -238,8 +238,7 @@ function placeOrder(body, res) {
             itemObjects.push(obj);
     }
     console.log("Item Objects after Slot Detection:", itemObjects);
-    // Getting previously ordered items from the body
-    let allItems = getOldItems(body);
+    // Getting previously ordered items from the global allItems array
     console.log("Previous Items:", allItems);
     // Checking against previously ordered items for potential conflicts or replacements
     for (let itemObject of itemObjects) {

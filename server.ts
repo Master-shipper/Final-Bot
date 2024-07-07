@@ -13,7 +13,7 @@ const itemLimit = 50;
 const orderLimit = 10;
 const comboComps = new Set(["burger", "fries", "drink"]);
 const omsUrl = "https://liyutongordermanagementsystem.herokuapp.com/getOrder/";
-let allItems = [];
+let allItems: any[] = [];
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -248,8 +248,7 @@ function placeOrder(body: any, res: Response) {
 
     console.log("Item Objects after Slot Detection:", itemObjects);
 
-    // Getting previously ordered items from the body
-    let allItems = getOldItems(body);
+    // Getting previously ordered items from the global allItems array
     console.log("Previous Items:", allItems);
 
     // Checking against previously ordered items for potential conflicts or replacements
@@ -293,6 +292,7 @@ function placeOrder(body: any, res: Response) {
     // Confirming the order with the user
     confirmAllItems(body, allItems, res);
 }
+
 
 function addItem(body: any, res: Response) {
     let obj = createItemObject(body.queryResult.parameters.allItem, body.queryResult.parameters.itemAmount, 1);
