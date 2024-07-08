@@ -593,8 +593,10 @@ function removeItem(body, res) {
     confirmAllItems(body, allItems, res);
 }
 function replaceItem(body, res) {
-    // Order context
-    let allItems = getOldItems(body);
+    // Ensure allItems is populated from global context if not already done
+    if (allItems.length === 0 && body && body.order && body.order.items) {
+        allItems = body.order.items;
+    }
     if (checkEmptyOrder(body, allItems))
         return;
     let length = allItems.length;
@@ -614,7 +616,7 @@ function replaceItem(body, res) {
                 return;
         }
         else {
-            allItems[length - 1] = obj; // replace the last item with the new object
+            allItems[length - 1] = obj; // Replace the last item with the new object
             allItems[length - 1].amount = amount;
             newItems = resetOrderContext(body, allItems);
             if (checkEmptyOrder(body, newItems))
@@ -622,7 +624,7 @@ function replaceItem(body, res) {
             confirmAllItems(body, newItems, res);
         }
     }
-    else if (allOption) { // either one of these is defined
+    else if (allOption) { // Either one of these is defined
         let categoryOptions = getCategoryOption([allOption], lastItem);
         if (isOptionsConflict(categoryOptions)) {
             res.json({ fulfillmentText: `Seems your customized options have conflicts. Could you say that again?` });
