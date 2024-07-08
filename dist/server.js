@@ -1,13 +1,4 @@
 "use strict";
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -321,61 +312,51 @@ function addItem(body, res) {
 function placeOrderAdd(body, res) {
     let clarifyContext = getContextParams(body, 'clarifyitems');
     let itemsToClarify = clarifyContext ? clarifyContext.clarifyitems : [];
-    console.log(printItems(itemsToClarify));
     deleteContext(body, 'clarifyitems');
-    let allItems = getOldItems(body);
+    let allItems = body.allItems || [];
     allItems.push(...itemsToClarify); // Use spread operator to push array elements into allItems
-    let newItems = resetOrderContext(body, allItems);
-    if (checkEmptyOrder(body, newItems))
+    setContext(body, 'order', 5, { order: allItems });
+    if (checkEmptyOrder(body, allItems))
         return;
-    confirmAllItems(body, newItems, res);
+    confirmAllItems(body, allItems, res);
 }
 function placeOrderModify(body, res) {
-    // Retrieve items to clarify from context
     let clarifyContext = getContextParams(body, 'clarifyitems');
     let itemsToClarify = clarifyContext ? clarifyContext.clarifyitems : [];
-    console.log(printItems(itemsToClarify)); // Logging clarified items
-    deleteContext(body, 'clarifyitems'); // Remove clarifyitems context after use
-    // Get existing items in the order (assuming allItems is managed globally)
+    deleteContext(body, 'clarifyitems');
     let allItems = body.allItems || [];
     let length = allItems.length;
-    // If there are no existing items, add items to clarify directly
     if (length < 1) {
         allItems.push(...itemsToClarify); // Use spread operator to push array elements into allItems
     }
     else {
         let i;
-        // Check if the first item to clarify already exists in the order
         for (i = length - 1; i >= 0; i--) {
             if (allItems[i].name == itemsToClarify[0].name)
                 break;
         }
         if (i >= 0) {
-            // Modify existing item with new options
             let newOptions = itemsToClarify[0].options;
             let item = allItems[i];
             let categoryOptions = getCategoryOption(newOptions, item);
             if (isOptionsConflict(categoryOptions)) {
-                res.json({
-                    fulfillmentText: `Uh... I'm sorry?`
-                });
+                res.json({ fulfillmentText: `Uh... I'm sorry?` });
                 return;
             }
-            allItems[i] = insertOptionsToItem(item, categoryOptions); // Update item with new options
+            allItems[i] = insertOptionsToItem(item, categoryOptions);
         }
         else {
-            allItems.push(...itemsToClarify); // Add new items to clarify to allItems
+            allItems.push(...itemsToClarify);
         }
     }
-    // Update allItems in body object
     body.allItems = allItems;
-    // Check if the order is now empty and handle accordingly
+    setContext(body, 'order', 5, { order: allItems });
     if (checkEmptyOrder(body, allItems))
         return;
-    // Confirm all items in the updated order
     confirmAllItems(body, allItems, res);
 }
 function clarifyBurger(body, res) {
+    let oldItems = [...allItems]; // Create a copy of allItems
     let burger = body.queryResult.parameters.comboOption; // Assuming comboOption is directly accessible from body
     let clarifyContext = getContextParams(body, 'clarifyburger');
     let obj;
@@ -403,23 +384,23 @@ function clarifyBurger(body, res) {
             obj.options.push(burger);
         }
     }
-    let allItems = getOldItems(body);
     let replaceItemParams = getContextParams(body, 'replaceitem');
     let isReplacingItem = replaceItemParams ? replaceItemParams.replaceitem : false;
     if (isReplacingItem) {
-        obj.amount = allItems[allItems.length - 1].amount;
-        allItems[allItems.length - 1] = obj;
+        obj.amount = oldItems[oldItems.length - 1].amount;
+        oldItems[oldItems.length - 1] = obj;
         deleteContext(body, 'replaceitem');
     }
     else {
-        allItems.push(obj);
+        oldItems.push(obj);
     }
-    let newItems = resetOrderContext(body, allItems);
+    let newItems = resetOrderContext(body, oldItems);
     if (checkEmptyOrder(body, newItems))
         return;
     confirmAllItems(body, newItems, res);
 }
 function clarifyShake(body, res) {
+    let oldItems = [...allItems]; // Create a copy of allItems
     let shakeOption = body.queryResult.parameters.shakeOption; // Assuming shakeOption is directly accessible from body
     let clarifyContext = getContextParams(body, 'clarifyshake');
     let obj;
@@ -442,56 +423,68 @@ function clarifyShake(body, res) {
         }
         obj.options.push(shakeOption);
     }
-    let allItems = getOldItems(body);
     let replaceItemParams = getContextParams(body, 'replaceitem');
     let isReplacingItem = replaceItemParams ? replaceItemParams.replaceitem : false;
     if (isReplacingItem) {
-        obj.amount = allItems[allItems.length - 1].amount;
-        allItems[allItems.length - 1] = obj;
+        obj.amount = oldItems[oldItems.length - 1].amount;
+        oldItems[oldItems.length - 1] = obj;
         deleteContext(body, 'replaceitem');
     }
     else {
-        allItems.push(obj);
+        oldItems.push(obj);
     }
-    let newItems = resetOrderContext(body, allItems);
+    let newItems = resetOrderContext(body, oldItems);
     if (checkEmptyOrder(body, newItems))
         return;
     confirmAllItems(body, newItems, res);
 }
 function modifyItem(body, res) {
-    let newOptions = body.queryResult.parameters.allOption; // Assuming allOption is directly accessible from body
-    let allItems = getOldItems(body);
+    // Extract the new options from the request body
+    let newOptions = body.queryResult.parameters.allOption; // Assuming allOption is correctly passed in the request
+    // Ensure `allItems` is populated from the global context if not already done
+    if (allItems.length === 0 && body && body.order && body.order.items) {
+        allItems = body.order.items;
+    }
+    // Check if the order is empty
     if (checkEmptyOrder(body, allItems))
         return;
     let length = allItems.length;
-    let i = length - 1;
-    for (; i >= 0; i--) {
+    let itemModified = false;
+    // Iterate over items to find a match and modify
+    for (let i = length - 1; i >= 0; i--) {
         let modifiedItems = modifyTheItem(allItems[i], newOptions);
         if (modifiedItems.length > 0) {
-            allItems.splice(i, 1);
-            allItems.push(...modifiedItems);
+            allItems.splice(i, 1); // Remove the original item
+            allItems.push(...modifiedItems); // Add the modified items
+            itemModified = true;
             break;
         }
     }
-    if (i < 0) { // None of the items is modified
+    // If no items were modified, send a failure response
+    if (!itemModified) {
         res.json({ fulfillmentText: `Sorry, that would not work. Could you say that again?` });
         return;
     }
+    // Reset the order context and check if the order is empty
     let newItems = resetOrderContext(body, allItems);
     if (checkEmptyOrder(body, newItems))
         return;
+    // Confirm all items in the order
     confirmAllItems(body, newItems, res);
 }
 function modifyTheItem(item, newOptions) {
     let modifiedItems = []; // Explicitly defining modifiedItems as an array of any
-    if (item.category == "combo") {
+    if (item.category === "combo") {
         let comboMap = breakCombo(item);
         let comboModified = false;
+        // Iterate over combo components
         for (let category of comboComps) {
             let obj = comboMap.get(category);
             let categoryOptions = getCategoryOption(newOptions, obj);
+            // Check for options conflict
             if (isOptionsConflict(categoryOptions))
                 return modifiedItems;
+            // Modify the combo item if category options are available
             if (categoryOptions.has(category)) {
                 obj.options = categoryOptions.get(category);
                 obj = sortOptions(obj);
@@ -500,6 +493,7 @@ function modifyTheItem(item, newOptions) {
                 comboModified = true;
             }
         }
+        // If any modification was made, push modified combo components
         if (comboModified) {
             for (let category of comboComps) {
                 modifiedItems.push(comboMap.get(category));
@@ -508,8 +502,10 @@ function modifyTheItem(item, newOptions) {
     }
     else { // Modify single item
         let categoryOptions = getCategoryOption(newOptions, item);
+        // Check for options conflict
         if (isOptionsConflict(categoryOptions))
             return modifiedItems;
+        // Modify the item if category options are available
         if (categoryOptions.has(item.category)) {
             item = insertOptionsToItem(item, categoryOptions);
             item = sortOptions(item);
@@ -521,7 +517,10 @@ function modifyTheItem(item, newOptions) {
 }
 function modifyAmount(body, res) {
     let amount = strToInt(body.queryResult.parameters.itemAmount);
-    let allItems = getOldItems(body);
+    // Ensure allItems is populated from global context if not already done
+    if (allItems.length === 0 && body && body.order && body.order.items) {
+        allItems = body.order.items;
+    }
     if (checkEmptyOrder(body, allItems))
         return;
     let length = allItems.length;
@@ -642,8 +641,8 @@ function replaceItem(body, res) {
     }
 }
 function finalizeOrder(body, res) {
-    let allItems = getOldItems(body);
-    if (checkEmptyOrder(body, allItems))
+    let oldItems = [...allItems]; // Create a copy of allItems
+    if (checkEmptyOrder(body, oldItems))
         return;
     let response;
     let deliveryParams = getContextParams(body, 'delivery');
@@ -652,60 +651,57 @@ function finalizeOrder(body, res) {
     }
     else {
         let deliveryMethod = deliveryParams.delivery;
-        response = 'So your order will be ' + printItems(allItems) + ', ' + deliveryMethod + ', right?';
+        response = 'So your order will be ' + printItems(oldItems) + ', ' + deliveryMethod + ', right?';
+        setDeliveryMethod(body, deliveryMethod); // Ensure delivery method is set
     }
-    res.json({ fulfillmentText: response }); // Assuming 'res' is an Express Response object
+    res.json({ fulfillmentText: response });
 }
 function finalizeOrderChooseDelivery(body, res) {
-    let allItems = getOldItems(body);
-    if (checkEmptyOrder(body, allItems))
+    let oldItems = [...allItems]; // Create a copy of allItems
+    if (checkEmptyOrder(body, oldItems))
         return;
     let deliveryMethod = body.queryResult.parameters.deliveryMethod;
     setDeliveryMethod(body, deliveryMethod);
-    let response = `So your order will be ${printItems(allItems)}, ${deliveryMethod}, right?`;
+    let response = `So your order will be ${printItems(oldItems)}, ${deliveryMethod}, right?`;
     res.json({ fulfillmentText: response });
-}
-function finalizeOrderConfirmOrder(body, res) {
-    return __awaiter(this, void 0, void 0, function* () {
-        let allItems = getOldItems(body);
-        if (checkEmptyOrder(body, allItems))
-            return;
-        allItems = processOrder(allItems);
-        let delivery = getContextParams(body, 'delivery').delivery;
-        // Construct order JSON
-        let orderJson = {
-            intent: "OrderFood",
-            "delivery method": delivery,
-            items: allItems,
-            time: getLocaleTimeString()
-        };
-        // Construct request URL
-        //   let request = omsUrl + JSON.stringify(orderJson);
-        // try {
-        // Send order information to server
-        //   let response = await sendToServer(request);
-        //  let json = JSON.parse(response);
-        // Construct response message
-        //  let message = `The total will be ${json.totalPrice} dollars. Your order number is ${json.orderNumber}. Have a good one.`;
-        // Delete context only if the order is placed successfully
-        //  deleteContext(body, 'order');
-        //deleteContext(body, 'delivery');
-        //deleteContext(body, 'placeorder');
-        // res.json({ fulfillmentText: message });
-        // } catch (error) {
-        // Handle error if order placement fails
-        // console.error("Error placing order:", error);
-        // res.json({ fulfillmentText: "Oops! Something went wrong while placing your order. Could you try again? My apologies." });
-        // }
-    });
 }
 function chooseDelivery(body, res) {
     let delivery = body.queryResult.parameters.deliveryMethod;
+    console.log('Delivery Method:', delivery); // Log delivery method to debug
     setDeliveryMethod(body, delivery);
-    let response = `${getConfirmStr()}${capitalizeString(delivery)}. ${getDefaultFollowUpStr()}`;
+    let confirmStr = getConfirmStr(); // Assuming getConfirmStr() retrieves a confirmation string
+    let capitalizedDelivery = capitalizeString(delivery); // Assuming capitalizeString() capitalizes the delivery method
+    let defaultFollowUpStr = getDefaultFollowUpStr(); // Assuming getDefaultFollowUpStr() retrieves a follow-up string
+    let response = `${confirmStr}${capitalizedDelivery}. ${defaultFollowUpStr}`;
     res.json({ fulfillmentText: response });
 }
+function finalizeOrderConfirmOrder(body, res) {
+    // Check if there are no items in the order
+    if (!allItems || allItems.length === 0) {
+        console.log("There is no item in the order. What can I get for you today?");
+        setContext(body, 'unhappy', 5, { /* parameters object */});
+        res.json({ fulfillmentText: "There is no item in the order. What can I get for you today?" });
+        return;
+    }
+    // Generate a unique order ID
+    let orderId = generateOrderId();
+    // Prepare the response message with order details
+    let response = `Your order has been placed with the following details:\n\n${printItems(allItems)}\nOrder ID: ${orderId}\nOrder Time: ${getLocaleTimeString()}\n\nThank you for your order!`;
+    // Send the confirmation response to the user
+    res.json({ fulfillmentText: response });
+    // Clear all items and reset the context
+    allItems = []; // Clear the allItems array
+    resetOrderContext(body, []); // Reset the order context
+    // Clear any other relevant contexts if needed
+    deleteContext(body, 'clarifyitems');
+    deleteContext(body, 'replaceitem');
+    deleteContext(body, 'order');
+}
 //utility
+function generateOrderId() {
+    // Generates a random order ID
+    return Math.floor(Math.random() * 10000) + 1; // Adjust range as needed
+}
 function initSlotFilling() {
     const SF = {};
     SF.clarifyBurger = false;
