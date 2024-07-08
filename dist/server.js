@@ -22,6 +22,7 @@ const { printItems } = require('./print-items');
 const { getCategoryOption, isOptionsConflict, insertOptionsToItem } = require('./insert-options');
 const { orderPrice } = require('./order-price');
 const { wordsToNumbers } = require('words-to-numbers');
+const bodyParser = require('body-parser');
 const itemLimit = 50;
 const orderLimit = 10;
 const comboComps = new Set(["burger", "fries", "drink"]);
@@ -240,6 +241,9 @@ function placeOrder(body, res) {
     console.log("Item Objects after Slot Detection:", itemObjects);
     // Getting previously ordered items from the global allItems array
     console.log("Previous Items:", allItems);
+    let clarifyItems = false;
+    let itemsToClarify = [];
+    let length = allItems.length;
     // Checking against previously ordered items for potential conflicts or replacements
     for (let itemObject of itemObjects) {
         let itemFound = false;
@@ -257,9 +261,15 @@ function placeOrder(body, res) {
                 break;
             }
         }
-        // Add new item if not found in existing items
+        // If the same name but different options => clarify
         if (!itemFound) {
-            allItems.push(itemObject);
+            if (length > 0 && itemObject.name !== "combo" && itemObject.name === allItems[length - 1].name && !arraysEqual(itemObject.options, allItems[length - 1].options)) {
+                clarifyItems = true;
+                itemsToClarify.push(itemObject);
+            }
+            else {
+                allItems.push(itemObject);
+            }
         }
     }
     console.log("All Items after Processing:", allItems);
@@ -267,6 +277,14 @@ function placeOrder(body, res) {
     setContext(body, 'order', 5, { order: allItems });
     // Setting the delivery method based on parameters from the parsed body
     setDeliveryMethod(body, body.queryResult.parameters.deliveryMethod);
+    if (clarifyItems) {
+        let clarifyParams = { clarifyitems: itemsToClarify };
+        setContext(body, 'clarifyitems', 5, clarifyParams);
+        res.json({
+            fulfillmentText: `Would you like to modify your ${itemsToClarify[0].name} or add ${itemsToClarify[0].amount} more ${itemsToClarify[0].name}${(itemsToClarify[0].name !== "fries" && itemsToClarify[0].amount > 1) ? "s" : ""}?`
+        });
+        return;
+    }
     // If slot filling is not complete, return early
     if (fillSlots(body, SF, res))
         return;
@@ -278,25 +296,27 @@ function placeOrder(body, res) {
 }
 function addItem(body, res) {
     let obj = createItemObject(body.queryResult.parameters.allItem, body.queryResult.parameters.itemAmount, 1);
-    if (obj.category == "drink" && obj.options.length == 0)
+    if (obj.category === "drink" && obj.options.length === 0)
         obj.options.push("medium"); // Set default options for drink
     console.log(obj);
-    let SF = initSlotFilling();
-    let allItems = getOldItems(body);
-    let length = allItems.length;
-    if (length > 0 && allItems[length - 1].name == obj.name && isIncludedIn(obj.options, allItems[length - 1].options)) {
-        allItems[length - 1].amount += obj.amount; // Increase amount if item already exists with same options
+    let SF = initSlotFilling(); // Adjust type if possible
+    let oldItems = [...allItems]; // Create a copy of allItems
+    if (checkEmptyOrder(body, oldItems))
+        return;
+    let length = oldItems.length;
+    if (length > 0 && oldItems[length - 1].name === obj.name && arraysEqual(obj.options, oldItems[length - 1].options)) {
+        oldItems[length - 1].amount += obj.amount; // Increase amount if item already exists with same options
     }
     else if (!detectSlots(SF, obj)) {
-        allItems.push(obj); // Add new item if no slots detected
+        oldItems.push(obj); // Add new item if no slots detected
     }
-    let newItems = resetOrderContext(body, allItems);
+    oldItems = resetOrderContext(body, oldItems);
     setDeliveryMethod(body, body.queryResult.parameters.deliveryMethod);
     if (fillSlots(body, SF, res))
         return; // Handle slot filling responses
-    if (checkEmptyOrder(body, newItems))
+    if (checkEmptyOrder(body, oldItems))
         return;
-    confirmAllItems(body, newItems, res); // Confirm items in the order
+    confirmAllItems(body, oldItems, res); // Confirm items in the order
 }
 function placeOrderAdd(body, res) {
     let clarifyContext = getContextParams(body, 'clarifyitems');
@@ -311,22 +331,27 @@ function placeOrderAdd(body, res) {
     confirmAllItems(body, newItems, res);
 }
 function placeOrderModify(body, res) {
+    // Retrieve items to clarify from context
     let clarifyContext = getContextParams(body, 'clarifyitems');
     let itemsToClarify = clarifyContext ? clarifyContext.clarifyitems : [];
-    console.log(printItems(itemsToClarify));
-    deleteContext(body, 'clarifyitems');
-    let allItems = getOldItems(body);
+    console.log(printItems(itemsToClarify)); // Logging clarified items
+    deleteContext(body, 'clarifyitems'); // Remove clarifyitems context after use
+    // Get existing items in the order (assuming allItems is managed globally)
+    let allItems = body.allItems || [];
     let length = allItems.length;
+    // If there are no existing items, add items to clarify directly
     if (length < 1) {
         allItems.push(...itemsToClarify); // Use spread operator to push array elements into allItems
     }
     else {
         let i;
+        // Check if the first item to clarify already exists in the order
         for (i = length - 1; i >= 0; i--) {
             if (allItems[i].name == itemsToClarify[0].name)
                 break;
         }
         if (i >= 0) {
+            // Modify existing item with new options
             let newOptions = itemsToClarify[0].options;
             let item = allItems[i];
             let categoryOptions = getCategoryOption(newOptions, item);
@@ -336,16 +361,19 @@ function placeOrderModify(body, res) {
                 });
                 return;
             }
-            allItems[i] = insertOptionsToItem(item, categoryOptions);
+            allItems[i] = insertOptionsToItem(item, categoryOptions); // Update item with new options
         }
         else {
-            allItems.push(...itemsToClarify); // Use spread operator to push array elements into allItems
+            allItems.push(...itemsToClarify); // Add new items to clarify to allItems
         }
     }
-    let newItems = resetOrderContext(body, allItems);
-    if (checkEmptyOrder(body, newItems))
+    // Update allItems in body object
+    body.allItems = allItems;
+    // Check if the order is now empty and handle accordingly
+    if (checkEmptyOrder(body, allItems))
         return;
-    confirmAllItems(body, newItems, res);
+    // Confirm all items in the updated order
+    confirmAllItems(body, allItems, res);
 }
 function clarifyBurger(body, res) {
     let burger = body.queryResult.parameters.comboOption; // Assuming comboOption is directly accessible from body
@@ -510,11 +538,10 @@ function modifyAmount(body, res) {
     confirmAllItems(body, newItems, res);
 }
 function removeItem(body, res) {
-    let oldItems = getOldItems(body);
+    let oldItems = [...allItems]; // Create a copy of allItems
     if (checkEmptyOrder(body, oldItems))
         return;
     let obj = createItemObject(body.queryResult.parameters.allItem, body.queryResult.parameters.itemAmount, 999);
-    // Break combos if needed
     let tempItems = [];
     for (let item of oldItems) {
         tempItems.push(item);
@@ -528,18 +555,15 @@ function removeItem(body, res) {
             }
         }
     }
-    let allItems = mergeOrder(tempItems);
-    // Criteria for removal
+    let mergedItems = mergeOrder(tempItems);
     let newItems = [];
     let removed = false;
-    for (let item of allItems) {
+    for (let item of mergedItems) {
         let reserved = false;
-        // Remove by category
         if (obj.name === "burger" || obj.name === "drink") {
             if (item.category !== obj.name)
                 reserved = true;
         }
-        // Remove particular item
         else if (item.name !== obj.name) {
             reserved = true;
         }
@@ -559,14 +583,14 @@ function removeItem(body, res) {
             removed = true;
         }
     }
-    newItems = resetOrderContext(body, newItems);
+    allItems = resetOrderContext(body, newItems);
     if (!removed) {
         res.json({ fulfillmentText: `Sorry, that would not work. Could you say that again?` });
         return;
     }
-    if (checkEmptyOrder(body, newItems))
+    if (checkEmptyOrder(body, allItems))
         return;
-    confirmAllItems(body, newItems, res);
+    confirmAllItems(body, allItems, res);
 }
 function replaceItem(body, res) {
     // Order context
@@ -884,14 +908,20 @@ function getDefaultFollowUpStr() {
 }
 function mergeOrder(items) {
     let result = [];
-    // This function merges identical JSON objects in an order list
     for (let item of items) {
-        let orderItem = parseItem(item);
+        let orderItem = item; // Assume item is already an object
+        // If item is a string, parse it
+        if (typeof item === 'string') {
+            orderItem = parseItem(item);
+        }
+        if (!orderItem) {
+            console.error('Skipping invalid item:', item);
+            continue;
+        }
         let hasPushed = false;
         for (let i = 0; i < result.length; i++) {
             let resultItem = result[i];
             if (orderItem.name === resultItem.name && arraysEqual(orderItem.options, resultItem.options)) {
-                // Same item, increase amount
                 result[i].amount += orderItem.amount;
                 hasPushed = true;
                 break;
@@ -901,11 +931,9 @@ function mergeOrder(items) {
             result.push(orderItem);
         }
     }
-    // Detect fraudulent deals
     for (let i = 0; i < result.length; i++) {
         if (result[i].amount > itemLimit) {
             result[i].amount = itemLimit;
-            // Optionally inform the user about the item limit
             console.log(`[Robo-waiter] Thank you, but we only accept order amount of ${itemLimit} at most.`);
         }
     }
