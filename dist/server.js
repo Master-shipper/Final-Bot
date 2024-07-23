@@ -125,12 +125,12 @@ function queryMenu(body, res) {
     const card = {
         card: {
             title: 'MCS Burger – Menu',
-            imageUri: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing',
+            imageUri: 'https://drive.google.com/uc?export=view&id=10UFRcXUJVOcqQv-dAXG4MQwQ8pa8mgBq',
             subtitle: '4:00 – 7:00 pm\nPacific Ballroom, UON Student Center',
             buttons: [
                 {
                     text: 'Check it out',
-                    postback: 'https://drive.google.com/file/d/13HYF3RaBAzcP4Pn6Ex98YWAPwVWyLvD-/view?usp=sharing'
+                    postback: 'https://drive.google.com/file/d/10UFRcXUJVOcqQv-dAXG4MQwQ8pa8mgBq/view?usp=sharing'
                 }
             ]
         }
@@ -189,10 +189,20 @@ function queryWord(body, res) {
     const parameters = body.queryResult.parameters;
     let response;
     if (parameters.vocabulary) {
-        response = wordMap.get(parameters.vocabulary);
+        if (parameters.vocabulary === "joke" || parameters.vocabulary === "jokes") {
+            response = getRandomJoke(); // Get a random joke if "jokes" is requested
+        }
+        else {
+            response = wordMap.get(parameters.vocabulary);
+        }
     }
     if (parameters.any) {
-        response = wordMap.get(parameters.any);
+        if (parameters.any === "joke" || parameters.any === "jokes") {
+            response = getRandomJoke(); // Get a random joke if "jokes" is requested
+        }
+        else {
+            response = wordMap.get(parameters.any);
+        }
     }
     if (response) {
         res.json({
@@ -204,6 +214,11 @@ function queryWord(body, res) {
             fulfillmentText: `Sorry, I never heard ${parameters.any} before. Anything else I can help?`
         });
     }
+}
+function getRandomJoke() {
+    const jokes = wordMap.get("jokes");
+    const randomIndex = Math.floor(Math.random() * jokes.length);
+    return jokes[randomIndex];
 }
 function placeOrder(body, res) {
     // Extracting items from the parsed body
@@ -683,10 +698,12 @@ function finalizeOrderConfirmOrder(body, res) {
         res.json({ fulfillmentText: "There is no item in the order. What can I get for you today?" });
         return;
     }
+    // Calculate the total price of the order
+    const totalPrice = orderPrice(allItems);
     // Generate a unique order ID
     let orderId = generateOrderId();
     // Prepare the response message with order details
-    let response = `Your order has been placed with the following details:\n\n${printItems(allItems)}\nOrder ID: ${orderId}\nOrder Time: ${getLocaleTimeString()}\n\nThank you for your order!`;
+    let response = `**MCS BURGER RECEIPT**\nYour order has been placed with the following details:\n\n**Order Items**:${printItems(allItems)}\n**Order ID**: ${orderId}\n**Order Time**: ${getLocaleTimeString()}\n**Total Price**: $${totalPrice}\n\nThank you for your order!`;
     // Send the confirmation response to the user
     res.json({ fulfillmentText: response });
     // Clear all items and reset the context

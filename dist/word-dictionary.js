@@ -31,7 +31,28 @@ const wordMap = new Map([
     ["MCS", "Master of Computer Science"],
     ["Donald Trump", "Donald Trump (born June 14, 1946) is the 45th and current President of the United States."],
     ["Barack Obama", "Barack Obama is an American attorney and politician who served as the 44th President of the United States from 2009 to 2017."],
-    ["anteater", "Anteater is UCI's mascot. His name is Peter. He is 53 years old. Zot! Zot! Zot!"]
+    ["anteater", "Anteater is UCI's mascot. His name is Peter. He is 53 years old. Zot! Zot! Zot!"],
+    ["jokes", [
+        // General jokes
+        "Why don't scientists trust atoms? Because they make up everything!",
+        "Why did the scarecrow win an award? Because he was outstanding in his field!",
+        "Why don't skeletons fight each other? They don't have the guts!",
+        "What do you call fake spaghetti? An impasta!",
+        "How does a penguin build its house? Igloos it together!",
+        // Food-related jokes
+        "Why did the tomato turn red? Because it saw the salad dressing!",
+        "What do you call cheese that isn't yours? Nacho cheese!",
+        "Why don't eggs tell jokes? Because they might crack up!",
+        "Why did the banana go to the doctor? Because it wasn't peeling well!",
+        "How do you fix a broken pizza? With tomato paste!",
+        // Programmer-related jokes
+        "Why do programmers prefer dark mode? Because light attracts bugs!",
+        "How many programmers does it take to change a light bulb? None, that's a hardware problem!",
+        "Why do Java developers wear glasses? Because they don't C#!",
+        "Why do programmers hate nature? It has too many bugs.",
+        "What is a programmer's favorite hangout place? Foo Bar!",
+        "Roses are Red, Violets are Blue, Unexpected '{' on line 32"
+    ]]
 ]);
 
 
