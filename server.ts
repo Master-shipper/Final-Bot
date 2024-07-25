@@ -772,8 +772,23 @@ function finalizeOrderConfirmOrder(body: any, res: Response) {
     let orderId = generateOrderId();
 
     // Prepare the response message with order details
-    let response = `**MCS BURGER RECEIPT**\nYour order has been placed with the following details:\n\n**Order Items**:${printItems(allItems)}\n**Order ID**: ${orderId}\n**Order Time**: ${getLocaleTimeString()}\n**Total Price**: $${totalPrice}\n\nThank you for your order!`;
+    let response = `-
+                **SWIFTDINE BURGER RECEIPT**
+                    **CHIROMO NAIROBI**
+                        **Order ID**: ${orderId}
+    ------------------------------------------------------
+    ------------------------------------------------------
 
+    Your order has been placed with the following details:
+
+    *Order Items*:\n${printItems(allItems).split(',').join('\n  ')}
+    ------------------------------------------------------
+    ------------------------------------------------------
+    *TOTAL PRICE*: *$${totalPrice}*
+    *Order Time*: ${getLocaleTimeString()}
+    ------------------------------------------------------
+                    Thank you for your order!
+`;
     // Send the confirmation response to the user
     res.json({ fulfillmentText: response });
 
