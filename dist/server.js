@@ -463,10 +463,9 @@ function modifyItem(body, res) {
     // Check if the order is empty
     if (checkEmptyOrder(body, allItems))
         return;
-    let length = allItems.length;
     let itemModified = false;
     // Iterate over items to find a match and modify
-    for (let i = length - 1; i >= 0; i--) {
+    for (let i = allItems.length - 1; i >= 0; i--) {
         let item = allItems[i];
         let modifiedItems = []; // Explicitly defining modifiedItems as an array of any
         if (item.category === "combo") {
@@ -496,17 +495,7 @@ function modifyItem(body, res) {
             }
         }
         else { // Modify single item
-            let categoryOptions = getCategoryOption(newOptions, item);
-            // Check for options conflict
-            if (isOptionsConflict(categoryOptions))
-                return;
-            // Modify the item if category options are available
-            if (categoryOptions.has(item.category)) {
-                item = insertOptionsToItem(item, categoryOptions);
-                item = sortOptions(item);
-                console.log(item); // Logging the modified single item
-                modifiedItems.push(item);
-            }
+            modifiedItems = modifyTheItem(item, newOptions);
         }
         // If modifications were made, update the item list
         if (modifiedItems.length > 0) {
@@ -527,6 +516,21 @@ function modifyItem(body, res) {
         return;
     // Confirm all items in the order
     confirmAllItems(body, newItems, res);
+}
+function modifyTheItem(item, newOptions) {
+    let modifiedItems = []; // Explicitly defining modifiedItems as an array of any
+    let categoryOptions = getCategoryOption(newOptions, item);
+    // Check for options conflict
+    if (isOptionsConflict(categoryOptions))
+        return modifiedItems;
+    // Modify the item if category options are available
+    if (categoryOptions.has(item.category)) {
+        item = insertOptionsToItem(item, categoryOptions);
+        item = sortOptions(item);
+        console.log(item); // Logging the modified single item
+        modifiedItems.push(item);
+    }
+    return modifiedItems;
 }
 function modifyAmount(body, res) {
     let amount = strToInt(body.queryResult.parameters.itemAmount);
