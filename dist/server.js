@@ -467,7 +467,48 @@ function modifyItem(body, res) {
     let itemModified = false;
     // Iterate over items to find a match and modify
     for (let i = length - 1; i >= 0; i--) {
-        let modifiedItems = modifyTheItem(allItems[i], newOptions);
+        let item = allItems[i];
+        let modifiedItems = []; // Explicitly defining modifiedItems as an array of any
+        if (item.category === "combo") {
+            let comboMap = breakCombo(item);
+            let comboModified = false;
+            // Iterate over combo components
+            for (let category of comboComps) {
+                let obj = comboMap.get(category);
+                let categoryOptions = getCategoryOption(newOptions, obj);
+                // Check for options conflict
+                if (isOptionsConflict(categoryOptions))
+                    return;
+                // Modify the combo item if category options are available
+                if (categoryOptions.has(category)) {
+                    obj.options = categoryOptions.get(category);
+                    obj = sortOptions(obj);
+                    console.log(obj); // Logging the modified combo object
+                    comboMap.set(category, obj);
+                    comboModified = true;
+                }
+            }
+            // If any modification was made, push modified combo components
+            if (comboModified) {
+                for (let category of comboComps) {
+                    modifiedItems.push(comboMap.get(category));
+                }
+            }
+        }
+        else { // Modify single item
+            let categoryOptions = getCategoryOption(newOptions, item);
+            // Check for options conflict
+            if (isOptionsConflict(categoryOptions))
+                return;
+            // Modify the item if category options are available
+            if (categoryOptions.has(item.category)) {
+                item = insertOptionsToItem(item, categoryOptions);
+                item = sortOptions(item);
+                console.log(item); // Logging the modified single item
+                modifiedItems.push(item);
+            }
+        }
+        // If modifications were made, update the item list
         if (modifiedItems.length > 0) {
             allItems.splice(i, 1); // Remove the original item
             allItems.push(...modifiedItems); // Add the modified items
@@ -486,49 +527,6 @@ function modifyItem(body, res) {
         return;
     // Confirm all items in the order
     confirmAllItems(body, newItems, res);
-}
-function modifyTheItem(item, newOptions) {
-    let modifiedItems = []; // Explicitly defining modifiedItems as an array of any
-    if (item.category === "combo") {
-        let comboMap = breakCombo(item);
-        let comboModified = false;
-        // Iterate over combo components
-        for (let category of comboComps) {
-            let obj = comboMap.get(category);
-            let categoryOptions = getCategoryOption(newOptions, obj);
-            // Check for options conflict
-            if (isOptionsConflict(categoryOptions))
-                return modifiedItems;
-            // Modify the combo item if category options are available
-            if (categoryOptions.has(category)) {
-                obj.options = categoryOptions.get(category);
-                obj = sortOptions(obj);
-                console.log(obj); // Logging the modified combo object
-                comboMap.set(category, obj);
-                comboModified = true;
-            }
-        }
-        // If any modification was made, push modified combo components
-        if (comboModified) {
-            for (let category of comboComps) {
-                modifiedItems.push(comboMap.get(category));
-            }
-        }
-    }
-    else { // Modify single item
-        let categoryOptions = getCategoryOption(newOptions, item);
-        // Check for options conflict
-        if (isOptionsConflict(categoryOptions))
-            return modifiedItems;
-        // Modify the item if category options are available
-        if (categoryOptions.has(item.category)) {
-            item = insertOptionsToItem(item, categoryOptions);
-            item = sortOptions(item);
-            console.log(item); // Logging the modified single item
-            modifiedItems.push(item);
-        }
-    }
-    return modifiedItems;
 }
 function modifyAmount(body, res) {
     let amount = strToInt(body.queryResult.parameters.itemAmount);
@@ -703,10 +701,6 @@ function finalizeOrderConfirmOrder(body, res) {
     // Generate a unique order ID
     let orderId = generateOrderId();
     // Prepare the response message with order details
-    let itemsString = printItems(allItems);
-    itemsString = itemsString.replace(/, ([^,]* and [^,]*)$/, ' \n$1'); // Replace the last comma followed by text with newline
-    itemsString = itemsString.split(',').join('\n  '); // Replace remaining commas with newlines
-    // Prepare the response message with order details
     let response = `-
                 **SWIFTDINE BURGER RECEIPT**
                     **CHIROMO NAIROBI**
@@ -716,8 +710,7 @@ function finalizeOrderConfirmOrder(body, res) {
 
     Your order has been placed with the following details:
 
-    *Order Items*:
-    ${itemsString}
+    *Order Items*:\n${printItems(allItems).split(',').join('\n  ')}
     ------------------------------------------------------
     ------------------------------------------------------
     *TOTAL PRICE*: *$${totalPrice}*

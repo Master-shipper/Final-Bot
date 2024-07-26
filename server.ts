@@ -510,7 +510,53 @@ function modifyItem(body: any, res: Response) {
 
     // Iterate over items to find a match and modify
     for (let i = length - 1; i >= 0; i--) {
-        let modifiedItems = modifyTheItem(allItems[i], newOptions);
+        let item = allItems[i];
+        let modifiedItems: any[] = []; // Explicitly defining modifiedItems as an array of any
+
+        if (item.category === "combo") {
+            let comboMap = breakCombo(item);
+            let comboModified = false;
+
+            // Iterate over combo components
+            for (let category of comboComps) {
+                let obj = comboMap.get(category);
+                let categoryOptions = getCategoryOption(newOptions, obj);
+
+                // Check for options conflict
+                if (isOptionsConflict(categoryOptions)) return;
+
+                // Modify the combo item if category options are available
+                if (categoryOptions.has(category)) {
+                    obj.options = categoryOptions.get(category);
+                    obj = sortOptions(obj);
+                    console.log(obj); // Logging the modified combo object
+                    comboMap.set(category, obj);
+                    comboModified = true;
+                }
+            }
+
+            // If any modification was made, push modified combo components
+            if (comboModified) {
+                for (let category of comboComps) {
+                    modifiedItems.push(comboMap.get(category));
+                }
+            }
+        } else { // Modify single item
+            let categoryOptions = getCategoryOption(newOptions, item);
+
+            // Check for options conflict
+            if (isOptionsConflict(categoryOptions)) return;
+
+            // Modify the item if category options are available
+            if (categoryOptions.has(item.category)) {
+                item = insertOptionsToItem(item, categoryOptions);
+                item = sortOptions(item);
+                console.log(item); // Logging the modified single item
+                modifiedItems.push(item);
+            }
+        }
+
+        // If modifications were made, update the item list
         if (modifiedItems.length > 0) {
             allItems.splice(i, 1); // Remove the original item
             allItems.push(...modifiedItems); // Add the modified items
@@ -533,54 +579,6 @@ function modifyItem(body: any, res: Response) {
     confirmAllItems(body, newItems, res);
 }
 
-function modifyTheItem(item: any, newOptions: any[]): any[] {
-    let modifiedItems: any[] = []; // Explicitly defining modifiedItems as an array of any
-
-    if (item.category === "combo") {
-        let comboMap = breakCombo(item);
-        let comboModified = false;
-
-        // Iterate over combo components
-        for (let category of comboComps) {
-            let obj = comboMap.get(category);
-            let categoryOptions = getCategoryOption(newOptions, obj);
-
-            // Check for options conflict
-            if (isOptionsConflict(categoryOptions)) return modifiedItems;
-
-            // Modify the combo item if category options are available
-            if (categoryOptions.has(category)) {
-                obj.options = categoryOptions.get(category);
-                obj = sortOptions(obj);
-                console.log(obj); // Logging the modified combo object
-                comboMap.set(category, obj);
-                comboModified = true;
-            }
-        }
-
-        // If any modification was made, push modified combo components
-        if (comboModified) {
-            for (let category of comboComps) {
-                modifiedItems.push(comboMap.get(category));
-            }
-        }
-    } else { // Modify single item
-        let categoryOptions = getCategoryOption(newOptions, item);
-
-        // Check for options conflict
-        if (isOptionsConflict(categoryOptions)) return modifiedItems;
-
-        // Modify the item if category options are available
-        if (categoryOptions.has(item.category)) {
-            item = insertOptionsToItem(item, categoryOptions);
-            item = sortOptions(item);
-            console.log(item); // Logging the modified single item
-            modifiedItems.push(item);
-        }
-    }
-
-    return modifiedItems;
-}
 
 function modifyAmount(body: any, res: Response) {
     let amount = strToInt(body.queryResult.parameters.itemAmount);

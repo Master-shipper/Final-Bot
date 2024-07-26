@@ -128,16 +128,22 @@ function getOptionType(option) {
 
 
 function isOptionsConflict(newOptionsMap) {
-    for (var key of newOptionsMap.keys()) {
+    for (let key of newOptionsMap.keys()) {
         let availableOptionsTypeMap = optionsTypeMap.get(key);
-        newOptions = newOptionsMap.get(key);
-        if (key == "drink") { // drink can only has one size
+        
+        // Debugging: Check if availableOptionsTypeMap is undefined
+        if (!availableOptionsTypeMap) {
+            console.error(`optionsTypeMap does not contain entry for key: ${key}`);
+            return true; // or handle the error as needed
+        }
+        
+        let newOptions = newOptionsMap.get(key);
+        if (key === "drink") { // Drink can only have one size
             if (newOptions.length > 1) {
                 console.log("Size options for drinks have conflict!");
                 return true;
             }
-        }
-        if (key == "shake") { // can choose multiple falvors for shakes
+        } else if (key === "shake") { // Can choose multiple flavors for shakes
             console.log("No conflicts in new options for shakes. Proceed.");
             return false;
         }
@@ -145,34 +151,36 @@ function isOptionsConflict(newOptionsMap) {
         let bunsIndex = -1;
         let cookIndex = -1;
         let styleIndex = -1;
+        
         for (let option of newOptions) {
             let category = availableOptionsTypeMap.get(option);
             let hasNoCategory = newOptions.includes("no " + category);
-            let hasCategory = ("no " + category) != option;
+            let hasCategory = ("no " + category) !== option;
+            
             if (hasNoCategory && hasCategory) {
                 console.log("isOptionsConflict(): No/Add options conflict!");
                 return true;
             }
             if (newOptions.includes('cold cheese') && newOptions.includes('grilled cheese')) {
                 console.log("isOptionsConflict(): Cold/grilled options conflict!");
-                return false;
+                return true;
             }
-            if (category == "buns") {
-                if (bunsIndex != -1) {
+            if (category === "buns") {
+                if (bunsIndex !== -1) {
                     console.log("isOptionsConflict(): Buns options conflict!");
                     return true;
                 }
                 bunsIndex = newOptions.indexOf(option);
             }
-            if (category == "cook") {
-                if (cookIndex != -1) {
+            if (category === "cook") {
+                if (cookIndex !== -1) {
                     console.log("isOptionsConflict(): Cook options conflict!");
                     return true;
                 }
                 cookIndex = newOptions.indexOf(option);
             }
-            if (category == "style") {
-                if (styleIndex != -1) {
+            if (category === "style") {
+                if (styleIndex !== -1) {
                     console.log("isOptionsConflict(): Style options conflict!");
                     return true;
                 }
@@ -183,6 +191,7 @@ function isOptionsConflict(newOptionsMap) {
     }
     return false;
 }
+
 
 exports.getCategoryOption = getCategoryOption;
 exports.isOptionsConflict = isOptionsConflict;
